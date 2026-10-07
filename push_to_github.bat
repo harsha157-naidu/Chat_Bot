@@ -9,7 +9,7 @@ echo         URL: https://github.com/new
 echo         Repository name: SenseSphere-AI  (or Chat-bot)
 echo         Make sure "Add a README" is UNCHECKED (empty repo)
 echo.
-echo Step 2: Pushing files to https://github.com/harsha157-naidu/SenseSphere-AI.git
+echo Step 2: Pushing files to https://github.com/harsha157-naidu/Chat_Bot.git
 echo.
 "C:\Users\harsh\.local\git\cmd\git.exe" push -u origin main
 
@@ -17,7 +17,7 @@ if %ERRORLEVEL% EQU 0 (
     echo.
     echo ======================================================================
     echo  [SUCCESS] All files deployed directly to GitHub!
-    echo  View repository: https://github.com/harsha157-naidu/SenseSphere-AI
+    echo  View repository: https://github.com/harsha157-naidu/Chat_Bot
     echo ======================================================================
 ) else (
     echo.

@@ -5,6 +5,7 @@ export default function AudioRecorder({ isOpen, onClose, onSpeechResult }) {
   const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [errorMessage, setErrorMessage] = useState(null);
+  const [speechLang, setSpeechLang] = useState('en-IN');
   const recognitionRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
@@ -22,38 +23,43 @@ export default function AudioRecorder({ isOpen, onClose, onSpeechResult }) {
     return () => {
       stopAll();
     };
-  }, [isOpen]);
+  }, [isOpen, speechLang]);
 
   const startListening = () => {
     setErrorMessage(null);
-    setTranscript('');
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
     if (SpeechRecognition) {
       try {
+        if (recognitionRef.current) {
+          try { recognitionRef.current.stop(); } catch (e) {}
+        }
+
         const recognition = new SpeechRecognition();
         recognition.continuous = true;
         recognition.interimResults = true;
-        recognition.lang = 'en-US';
+        recognition.lang = speechLang || 'en-IN';
 
         recognition.onstart = () => {
           setIsRecording(true);
         };
 
         recognition.onresult = (event) => {
-          let currentTranscript = '';
-          for (let i = event.resultIndex; i < event.results.length; i++) {
-            currentTranscript += event.results[i][0].transcript;
+          let fullTranscript = '';
+          for (let i = 0; i < event.results.length; i++) {
+            fullTranscript += event.results[i][0].transcript;
           }
-          setTranscript(currentTranscript);
+          if (fullTranscript.trim()) {
+            setTranscript(fullTranscript);
+          }
         };
 
         recognition.onerror = (event) => {
           console.error('Speech recognition error:', event.error);
           if (event.error === 'not-allowed') {
             setErrorMessage('Microphone access was denied. Please allow microphone permissions in your browser.');
-          } else {
+          } else if (event.error !== 'no-speech') {
             setErrorMessage(`Speech recognition error: ${event.error}`);
           }
           setIsRecording(false);
@@ -146,7 +152,7 @@ export default function AudioRecorder({ isOpen, onClose, onSpeechResult }) {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          marginBottom: '20px'
+          marginBottom: '16px'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div style={{
@@ -161,46 +167,75 @@ export default function AudioRecorder({ isOpen, onClose, onSpeechResult }) {
             }}>
               <Mic size={18} />
             </div>
-            <h3 style={{ fontSize: '1rem', fontWeight: 700 }}>Voice Interaction</h3>
+            <div>
+              <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0 }}>Voice Interaction</h3>
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Speak in natural language</span>
+            </div>
           </div>
-          <button onClick={onClose} className="btn-icon" style={{ width: '32px', height: '32px' }}>
-            <X size={18} />
-          </button>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {/* Language Selector */}
+            <select
+              value={speechLang}
+              onChange={(e) => setSpeechLang(e.target.value)}
+              style={{
+                fontSize: '0.75rem',
+                padding: '4px 8px',
+                borderRadius: '6px',
+                background: 'rgba(255, 255, 255, 0.08)',
+                color: '#f8fafc',
+                border: '1px solid var(--border-medium)',
+                cursor: 'pointer'
+              }}
+              title="Select speech recognition language"
+            >
+              <option value="en-IN">English (India)</option>
+              <option value="en-US">English (US)</option>
+              <option value="en-GB">English (UK)</option>
+              <option value="te-IN">Telugu (తెలుగు)</option>
+              <option value="hi-IN">Hindi (हिंदी)</option>
+              <option value="ta-IN">Tamil (தமிழ்)</option>
+            </select>
+
+            <button onClick={onClose} className="btn-icon" style={{ width: '28px', height: '28px' }}>
+              <X size={16} />
+            </button>
+          </div>
         </div>
 
         {/* Dynamic Voice Wave Animation Area */}
         <div style={{
-          padding: '30px 20px',
-          borderRadius: '16px',
+          padding: '20px',
+          borderRadius: '14px',
           background: 'rgba(255, 255, 255, 0.02)',
           border: '1px solid var(--border-subtle)',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          marginBottom: '20px'
+          marginBottom: '16px'
         }}>
           {/* Animated Glowing Mic Circle */}
           <div style={{
             position: 'relative',
-            width: '80px',
-            height: '80px',
+            width: '68px',
+            height: '68px',
             borderRadius: '50%',
             background: isRecording ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255, 255, 255, 0.05)',
             border: isRecording ? '2px solid #38bdf8' : '1px solid var(--border-subtle)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            marginBottom: '20px',
-            boxShadow: isRecording ? '0 0 30px rgba(56, 189, 248, 0.4)' : 'none',
+            marginBottom: '12px',
+            boxShadow: isRecording ? '0 0 25px rgba(56, 189, 248, 0.45)' : 'none',
             transition: 'all 0.3s ease'
           }}>
-            <Mic size={36} color={isRecording ? '#38bdf8' : 'var(--text-secondary)'} />
+            <Mic size={30} color={isRecording ? '#38bdf8' : 'var(--text-secondary)'} />
           </div>
 
           {/* Sound Wave Bars */}
           {isRecording ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', height: '32px', marginBottom: '14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', height: '24px', marginBottom: '10px' }}>
               {[...Array(12)].map((_, i) => (
                 <span
                   key={i}
@@ -215,52 +250,79 @@ export default function AudioRecorder({ isOpen, onClose, onSpeechResult }) {
               ))}
             </div>
           ) : (
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '14px' }}>
-              Microphone idle
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '8px' }}>
+              Microphone paused
             </p>
           )}
 
-          <p style={{ fontSize: '0.85rem', color: isRecording ? '#38bdf8' : 'var(--text-secondary)', fontWeight: 600 }}>
-            {isRecording ? 'Listening... Speak your question now' : 'Click Speak to resume listening'}
+          <p style={{ fontSize: '0.82rem', color: isRecording ? '#38bdf8' : 'var(--text-secondary)', fontWeight: 600, margin: 0 }}>
+            {isRecording ? 'Listening... Speak your question now' : 'Click "Resume Speaking" below to start'}
           </p>
         </div>
 
-        {/* Live Transcription Box */}
-        <div style={{ marginBottom: '20px' }}>
-          <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>
-            Recognized Speech
-          </label>
-          <div style={{
-            minHeight: '70px',
-            maxHeight: '120px',
-            overflowY: 'auto',
-            padding: '12px 14px',
-            borderRadius: '10px',
-            background: 'rgba(255, 255, 255, 0.04)',
-            border: '1px solid var(--border-medium)',
-            color: '#f8fafc',
-            fontSize: '0.9rem',
-            lineHeight: 1.5
-          }}>
-            {errorMessage ? (
-              <span style={{ color: '#f43f5e', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <AlertCircle size={15} /> {errorMessage}
-              </span>
-            ) : transcript ? (
-              transcript
-            ) : (
-              <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                Your spoken words will appear here in real-time...
-              </span>
+        {/* Live Editable Transcription Box */}
+        <div style={{ marginBottom: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+            <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Recognized Speech (Editable)
+            </label>
+            {transcript && (
+              <button
+                type="button"
+                onClick={() => setTranscript('')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#94a3b8',
+                  fontSize: '0.75rem',
+                  cursor: 'pointer',
+                  padding: 0
+                }}
+              >
+                Clear text
+              </button>
             )}
           </div>
+
+          <textarea
+            value={transcript}
+            onChange={(e) => setTranscript(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey && transcript.trim()) {
+                e.preventDefault();
+                handleSend();
+              }
+            }}
+            placeholder={isRecording ? 'Listening... Spoken words stream here in real-time. You can edit any word.' : 'Your spoken words will appear here. You can type or correct words before sending.'}
+            rows={3}
+            style={{
+              width: '100%',
+              padding: '10px 12px',
+              borderRadius: '10px',
+              background: 'rgba(255, 255, 255, 0.04)',
+              border: '1px solid var(--border-medium)',
+              color: '#f8fafc',
+              fontSize: '0.9rem',
+              lineHeight: 1.5,
+              resize: 'vertical',
+              outline: 'none',
+              fontFamily: 'inherit',
+              boxSizing: 'border-box'
+            }}
+          />
+
+          {errorMessage && (
+            <p style={{ color: '#f43f5e', fontSize: '0.8rem', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <AlertCircle size={14} /> {errorMessage}
+            </p>
+          )}
         </div>
 
         {/* Bottom Actions */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           {isRecording ? (
             <button onClick={stopAll} className="btn-secondary" style={{ fontSize: '0.85rem' }}>
-              <MicOff size={16} /> Stop Recording
+              <MicOff size={16} /> Pause Mic
             </button>
           ) : (
             <button onClick={startListening} className="btn-secondary" style={{ fontSize: '0.85rem' }}>
@@ -278,7 +340,7 @@ export default function AudioRecorder({ isOpen, onClose, onSpeechResult }) {
               cursor: transcript.trim() ? 'pointer' : 'not-allowed'
             }}
           >
-            <Send size={15} /> Send to SenseSphere
+            <Send size={15} /> Send Question
           </button>
         </div>
       </div>

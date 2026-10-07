@@ -15,6 +15,8 @@ dist/
 build/
 *.sqlite
 *.sqlite-journal
+*.migrated_backup
+backend/database/
 
 # Uploads
 backend/uploads/*

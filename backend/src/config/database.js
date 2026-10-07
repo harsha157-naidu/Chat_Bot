@@ -1,9 +1,5 @@
 const mysql = require('mysql2/promise');
-const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
-const fs = require('fs');
 
-const DB_TYPE = (process.env.DB_TYPE || 'mysql').toLowerCase();
 const DB_HOST = process.env.DB_HOST || 'localhost';
 const DB_PORT = parseInt(process.env.DB_PORT || '3306', 10);
 const DB_USER = process.env.DB_USER || 'root';
@@ -11,118 +7,88 @@ const DB_PASSWORD = process.env.DB_PASSWORD || 'harsha@2006';
 const DB_NAME = process.env.DB_NAME || 'sensesphere_ai';
 
 let mysqlPool = null;
-let sqliteDb = null;
-let activeEngine = 'none';
+let initPromise = null;
 
-// Initialize connection and schema
+// Initialize connection and schema in MySQL
 async function setupDatabase() {
-  if (DB_TYPE === 'mysql') {
-    try {
-      console.log(`Connecting to MySQL at ${DB_HOST}:${DB_PORT} as ${DB_USER}...`);
-      
-      // 1. Ensure database exists
-      const rootConn = await mysql.createConnection({
-        host: DB_HOST,
-        port: DB_PORT,
-        user: DB_USER,
-        password: DB_PASSWORD
-      });
-      await rootConn.query(`CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\`;`);
-      await rootConn.end();
+  if (initPromise) return initPromise;
 
-      // 2. Create connection pool
-      mysqlPool = mysql.createPool({
-        host: DB_HOST,
-        port: DB_PORT,
-        user: DB_USER,
-        password: DB_PASSWORD,
-        database: DB_NAME,
-        waitForConnections: true,
-        connectionLimit: 10,
-        queueLimit: 0,
-        charset: 'utf8mb4'
-      });
+  initPromise = (async () => {
+    console.log(`Connecting to MySQL at ${DB_HOST}:${DB_PORT} as ${DB_USER}...`);
 
-      // Test pool
-      await mysqlPool.query('SELECT 1');
-      activeEngine = 'mysql';
-      console.log(`✅ Connected to MySQL database [${DB_NAME}] on ${DB_HOST}:${DB_PORT}.`);
+    let attempts = 0;
+    const maxAttempts = 5;
 
-      // Initialize MySQL tables
-      await initMySQLTables();
-      return;
-    } catch (mysqlErr) {
-      console.error('⚠️ MySQL connection failed:', mysqlErr.message);
-      console.log('Falling back to SQLite temporary backup...');
+    while (attempts < maxAttempts) {
+      try {
+        // 1. Ensure database exists
+        const rootConn = await mysql.createConnection({
+          host: DB_HOST,
+          port: DB_PORT,
+          user: DB_USER,
+          password: DB_PASSWORD
+        });
+        await rootConn.query(`CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
+        await rootConn.end();
+
+        // 2. Create connection pool for application queries
+        mysqlPool = mysql.createPool({
+          host: DB_HOST,
+          port: DB_PORT,
+          user: DB_USER,
+          password: DB_PASSWORD,
+          database: DB_NAME,
+          waitForConnections: true,
+          connectionLimit: 15,
+          queueLimit: 0,
+          charset: 'utf8mb4'
+        });
+
+        // Test connection pool
+        await mysqlPool.query('SELECT 1');
+        console.log(`✅ Strictly connected to MySQL database [${DB_NAME}] on ${DB_HOST}:${DB_PORT}.`);
+
+        // 3. Initialize MySQL tables & default records
+        await initMySQLTables();
+        return;
+      } catch (err) {
+        attempts++;
+        console.error(`⚠️ MySQL connection attempt ${attempts}/${maxAttempts} failed:`, err.message);
+        if (attempts >= maxAttempts) {
+          throw new Error(`CRITICAL: Could not connect to MySQL database [${DB_NAME}]. All data must be stored strictly in MySQL. Error: ${err.message}`);
+        }
+        await new Promise(res => setTimeout(res, 2000));
+      }
     }
-  }
+  })();
 
-  // Fallback to SQLite if MySQL fails
-  setupSQLite();
-}
-
-function setupSQLite() {
-  const dbPath = path.resolve(__dirname, '../../database/sensesphere.sqlite');
-  const dbDir = path.dirname(dbPath);
-  if (!fs.existsSync(dbDir)) {
-    fs.mkdirSync(dbDir, { recursive: true });
-  }
-
-  sqliteDb = new sqlite3.Database(dbPath, (err) => {
-    if (err) {
-      console.error('Failed to connect to SQLite fallback:', err.message);
-    } else {
-      activeEngine = 'sqlite';
-      console.log('Connected to SQLite backup database.');
-      initSQLiteTables();
-    }
-  });
+  return initPromise;
 }
 
 // Uniform Promise-based query function for all controllers
 const query = async (sql, params = []) => {
-  if (activeEngine === 'mysql' && mysqlPool) {
-    try {
-      const [results] = await mysqlPool.execute(sql, params);
-      
-      // If it's a SELECT query, return the rows array
-      if (Array.isArray(results)) {
-        return results;
-      }
-      
-      // For INSERT / UPDATE / DELETE, provide both MySQL & SQLite compatibility properties
-      return {
-        insertId: results.insertId,
-        lastID: results.insertId,
-        affectedRows: results.affectedRows,
-        changes: results.affectedRows
-      };
-    } catch (err) {
-      console.error('MySQL query error:', err.message, '| SQL:', sql.slice(0, 100));
-      throw err;
+  if (!mysqlPool) {
+    await setupDatabase();
+  }
+
+  try {
+    const [results] = await mysqlPool.execute(sql, params);
+    
+    // If it's a SELECT query, return the rows array
+    if (Array.isArray(results)) {
+      return results;
     }
-  } else if (sqliteDb) {
-    return new Promise((resolve, reject) => {
-      const isSelect = /^\s*SELECT/i.test(sql);
-      if (isSelect) {
-        sqliteDb.all(sql, params, (err, rows) => {
-          if (err) return reject(err);
-          resolve(rows);
-        });
-      } else {
-        sqliteDb.run(sql, params, function (err) {
-          if (err) return reject(err);
-          resolve({
-            insertId: this.lastID,
-            lastID: this.lastID,
-            affectedRows: this.changes,
-            changes: this.changes
-          });
-        });
-      }
-    });
-  } else {
-    throw new Error('No active database connection available.');
+    
+    // For INSERT / UPDATE / DELETE, provide compatible properties
+    return {
+      insertId: results.insertId,
+      lastID: results.insertId,
+      affectedRows: results.affectedRows,
+      changes: results.affectedRows
+    };
+  } catch (err) {
+    console.error('MySQL query error:', err.message, '| SQL:', sql.slice(0, 100));
+    throw err;
   }
 };
 
@@ -221,9 +187,45 @@ async function initMySQLTables() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   `);
 
+  // Bug Tracking & Log Rectification Layer
+  await mysqlPool.query(`
+    CREATE TABLE IF NOT EXISTS unresolved_queries (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      chat_id INT DEFAULT NULL,
+      user_query TEXT NOT NULL,
+      reason VARCHAR(255) DEFAULT 'fallback',
+      status VARCHAR(50) DEFAULT 'unresolved',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      INDEX (chat_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+
+  await mysqlPool.query(`
+    CREATE TABLE IF NOT EXISTS system_errors (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      error_type VARCHAR(100) NOT NULL,
+      error_message TEXT NOT NULL,
+      stack_trace LONGTEXT DEFAULT NULL,
+      endpoint VARCHAR(255) DEFAULT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+
+  // Ensure override columns exist on users and chats
+  try {
+    await mysqlPool.query("ALTER TABLE users ADD COLUMN status VARCHAR(50) DEFAULT 'active';");
+  } catch (e) {
+    // Column already exists
+  }
+  try {
+    await mysqlPool.query("ALTER TABLE chats ADD COLUMN is_bot_disabled BOOLEAN DEFAULT FALSE;");
+  } catch (e) {
+    // Column already exists
+  }
+
   // Seed developer profile if empty
-  const [profiles] = await mysqlPool.query('SELECT * FROM developer_profile LIMIT 1');
-  if (!profiles || profiles.length === 0) {
+  const [profile] = await mysqlPool.query('SELECT * FROM developer_profile LIMIT 1');
+  if (!profile || profile.length === 0) {
     await mysqlPool.query(`
       INSERT INTO developer_profile (name, role, education, institution, project_name, description, purpose, technologies)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -235,9 +237,8 @@ async function initMySQLTables() {
       'SenseSphere AI',
       'SenseSphere AI is a multimodal AI assistant designed to understand text, images, audio, video, documents, camera input, and voice interactions.',
       'My purpose is to provide users with a single AI assistant capable of understanding different types of information and helping them with their questions by combining multiple forms of human-computer interaction into one simple AI assistant.',
-      'The system uses frontend web technologies, backend APIs, AI services, computer vision, speech processing, MySQL, cloud storage, and authentication services.'
+      'Frontend web technologies (React, Vite, CSS, Lucide), backend APIs (Node.js, Express), AI services, computer vision, speech processing, MySQL relational database, cloud storage, and authentication services.'
     ]);
-    console.log('Seeded developer profile into MySQL.');
   }
 
   // Ensure default guest user exists (id: 1)
@@ -249,127 +250,28 @@ async function initMySQLTables() {
     `);
   }
 
-  console.log('✅ All MySQL tables and initial records verified.');
-}
-
-// SQLite fallback initializer
-async function initSQLiteTables() {
+  // Step 1: Secure Identity Isolation (Authentication)
+  // Ensure Harsha Naidu exists with hashed password 'vennela@2007'
   try {
-    await query(`
-      CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        email TEXT NOT NULL UNIQUE,
-        password_hash TEXT NOT NULL,
-        profile_image TEXT,
-        role TEXT DEFAULT 'user',
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-    await query(`
-      CREATE TABLE IF NOT EXISTS chats (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        title TEXT NOT NULL DEFAULT 'New Conversation',
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-    await query(`
-      CREATE TABLE IF NOT EXISTS messages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        chat_id INTEGER NOT NULL,
-        sender TEXT NOT NULL,
-        message_text TEXT NOT NULL,
-        message_type TEXT NOT NULL DEFAULT 'text',
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-    await query(`
-      CREATE TABLE IF NOT EXISTS media (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
-        chat_id INTEGER,
-        message_id INTEGER,
-        file_name TEXT NOT NULL,
-        file_type TEXT NOT NULL,
-        file_url TEXT NOT NULL,
-        cloud_provider TEXT DEFAULT 'local',
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-    await query(`
-      CREATE TABLE IF NOT EXISTS ai_responses (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        message_id INTEGER NOT NULL,
-        model_name TEXT NOT NULL DEFAULT 'SenseSphere-Omni-v1',
-        response_text TEXT NOT NULL,
-        processing_time INTEGER DEFAULT 0,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-    await query(`
-      CREATE TABLE IF NOT EXISTS user_settings (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL UNIQUE,
-        voice_enabled INTEGER DEFAULT 0,
-        theme TEXT DEFAULT 'dark',
-        language TEXT DEFAULT 'en-US',
-        speech_rate REAL DEFAULT 1.0,
-        speech_pitch REAL DEFAULT 1.0,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-    await query(`
-      CREATE TABLE IF NOT EXISTS developer_profile (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        role TEXT NOT NULL,
-        education TEXT NOT NULL,
-        institution TEXT NOT NULL,
-        project_name TEXT NOT NULL,
-        description TEXT NOT NULL,
-        purpose TEXT NOT NULL,
-        technologies TEXT NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-    const profile = await query('SELECT * FROM developer_profile LIMIT 1');
-    if (!profile || profile.length === 0) {
-      await query(`
-        INSERT INTO developer_profile (name, role, education, institution, project_name, description, purpose, technologies)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `, [
-        'Arigala Sai Harshavardhan',
-        'Admin, Founder and Lead Developer',
-        'B.Tech CSE student',
-        'PBR VITS',
-        'SenseSphere AI',
-        'SenseSphere AI is a multimodal AI assistant designed to understand text, images, audio, video, documents, camera input, and voice interactions.',
-        'My purpose is to provide users with a single AI assistant capable of understanding different types of information and helping them with their questions by combining multiple forms of human-computer interaction into one simple AI assistant.',
-        'The system uses frontend web technologies, backend APIs, AI services, computer vision, speech processing, MySQL, cloud storage, and authentication services.'
-      ]);
+    const bcrypt = require('bcryptjs');
+    const [adminUser] = await mysqlPool.query('SELECT * FROM users WHERE email = ?', ['naiduharsha2006@gmail.com']);
+    const hashedAdminPassword = await bcrypt.hash('vennela@2007', 10);
+    if (!adminUser || adminUser.length === 0) {
+      await mysqlPool.query(`
+        INSERT INTO users (name, email, password_hash, role, status)
+        VALUES (?, ?, ?, 'admin', 'active')
+      `, ['Harsha Naidu', 'naiduharsha2006@gmail.com', hashedAdminPassword]);
+      console.log('✅ Created Administrator account: naiduharsha2006@gmail.com');
+    } else {
+      await mysqlPool.query(`
+        UPDATE users SET role = 'admin', password_hash = ?, status = 'active' WHERE email = ?
+      `, [hashedAdminPassword, 'naiduharsha2006@gmail.com']);
     }
-
-    const defaultUser = await query('SELECT * FROM users WHERE id = 1');
-    if (!defaultUser || defaultUser.length === 0) {
-      await query(`
-        INSERT INTO users (id, name, email, password_hash, role)
-        VALUES (1, 'Guest User', 'guest@sensesphere.ai', 'guest_pwd_hash', 'user')
-      `);
-    }
-  } catch (err) {
-    console.error('Error initializing SQLite tables:', err);
+  } catch (adminErr) {
+    console.warn('Admin user setup notice:', adminErr.message);
   }
+
+  console.log('✅ All MySQL tables and schema verified strictly in MySQL.');
 }
 
 // Start database
@@ -377,5 +279,6 @@ setupDatabase();
 
 module.exports = {
   query,
-  initDB: setupDatabase
+  initDB: setupDatabase,
+  mysqlPool
 };

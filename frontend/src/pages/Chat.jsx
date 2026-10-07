@@ -39,15 +39,29 @@ export default function Chat({
   const [inputText, setInputText] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const chatContainerRef = useRef(null);
   const messagesEndRef = useRef(null);
 
   const safeChats = Array.isArray(chats) ? chats : [];
   const safeMessages = Array.isArray(messages) ? messages : [];
 
-  // Auto-scroll to bottom of chat
+  // Reliable scroll strictly to bottom of chat messages
+  const scrollToBottom = (behavior = 'smooth') => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTo({
+        top: chatContainerRef.current.scrollHeight,
+        behavior
+      });
+    }
+    messagesEndRef.current?.scrollIntoView({ behavior, block: 'end' });
+  };
+
+  // Auto-scroll on new messages or thinking status
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [safeMessages, isProcessing]);
+    scrollToBottom('smooth');
+    const timer = setTimeout(() => scrollToBottom('smooth'), 120);
+    return () => clearTimeout(timer);
+  }, [safeMessages, isProcessing, activeChatId]);
 
   // Handle Text-to-Speech
   const handleSpeak = (text) => {
@@ -109,7 +123,8 @@ export default function Chat({
     <div style={{
       display: 'grid',
       gridTemplateColumns: '280px 1fr',
-      height: 'calc(100vh - 72px)',
+      height: '100%',
+      minHeight: 0,
       background: 'var(--bg-primary)',
       overflow: 'hidden'
     }}>
@@ -120,7 +135,10 @@ export default function Chat({
         backdropFilter: 'blur(20px)',
         display: 'flex',
         flexDirection: 'column',
-        padding: '16px'
+        padding: '16px',
+        height: '100%',
+        minHeight: 0,
+        overflow: 'hidden'
       }}>
         {/* New Chat Button */}
         <button
@@ -164,6 +182,7 @@ export default function Chat({
         {/* Chats List */}
         <div style={{
           flex: 1,
+          minHeight: 0,
           overflowY: 'auto',
           display: 'flex',
           flexDirection: 'column',
@@ -257,6 +276,7 @@ export default function Chat({
         display: 'flex',
         flexDirection: 'column',
         height: '100%',
+        minHeight: 0,
         overflow: 'hidden',
         position: 'relative'
       }}>
@@ -268,7 +288,8 @@ export default function Chat({
           padding: '12px 24px',
           borderBottom: '1px solid var(--border-subtle)',
           background: 'rgba(9, 10, 15, 0.5)',
-          backdropFilter: 'blur(12px)'
+          backdropFilter: 'blur(12px)',
+          flexShrink: 0
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span style={{ fontSize: '0.95rem', fontWeight: 700, color: '#ffffff' }}>
@@ -293,11 +314,16 @@ export default function Chat({
         </div>
 
         {/* Messages Stream */}
-        <div style={{
-          flex: 1,
-          overflowY: 'auto',
-          padding: '24px 32px'
-        }}>
+        <div 
+          ref={chatContainerRef}
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            padding: '24px 32px'
+          }}
+        >
           {safeMessages.length === 0 ? (
             <div style={{
               display: 'flex',
@@ -370,7 +396,8 @@ export default function Chat({
           padding: '16px 24px',
           background: 'rgba(9, 10, 15, 0.85)',
           borderTop: '1px solid var(--border-subtle)',
-          backdropFilter: 'blur(20px)'
+          backdropFilter: 'blur(20px)',
+          flexShrink: 0
         }}>
           <div style={{
             display: 'flex',

@@ -8,7 +8,6 @@ import AudioRecorder from './components/AudioRecorder';
 import MediaUploadModal from './components/MediaUploadModal';
 import SettingsModal from './components/SettingsModal';
 import AuthModal from './components/AuthModal';
-import DeveloperModal from './components/DeveloperModal';
 import { chatAPI, authAPI, uploadAPI } from './services/api';
 
 export default function App() {
@@ -26,7 +25,6 @@ export default function App() {
   const [uploadModal, setUploadModal] = useState({ isOpen: false, type: 'image' });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
-  const [isAboutOpen, setIsAboutOpen] = useState(false);
 
   // User preferences
   const [userSettings, setUserSettings] = useState({
@@ -36,6 +34,47 @@ export default function App() {
     speech_pitch: 1.0,
     selected_voice: ''
   });
+
+  // Stealth Routing: Listen to /admin-login, #/admin-login, and secret shortcut
+  useEffect(() => {
+    const checkStealthRoute = () => {
+      const path = window.location.pathname;
+      const hash = window.location.hash;
+      if (path === '/admin-login' || hash === '#/admin-login') {
+        setActiveTab('admin');
+      }
+    };
+
+    checkStealthRoute();
+    window.addEventListener('popstate', checkStealthRoute);
+    window.addEventListener('hashchange', checkStealthRoute);
+
+    // Secret Admin Hotkey: Ctrl+Shift+A or Alt+A
+    const handleAdminKey = (e) => {
+      if ((e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'a') || (e.altKey && e.key.toLowerCase() === 'a')) {
+        e.preventDefault();
+        window.history.pushState(null, '', '/admin-login');
+        setActiveTab('admin');
+      }
+    };
+    window.addEventListener('keydown', handleAdminKey);
+
+    return () => {
+      window.removeEventListener('popstate', checkStealthRoute);
+      window.removeEventListener('hashchange', checkStealthRoute);
+      window.removeEventListener('keydown', handleAdminKey);
+    };
+  }, []);
+
+  const handleExitAdmin = () => {
+    if (window.location.pathname === '/admin-login') {
+      window.history.pushState(null, '', '/');
+    }
+    if (window.location.hash === '#/admin-login') {
+      window.location.hash = '';
+    }
+    setActiveTab('chat');
+  };
 
   // On mount: check auth & load initial chats
   useEffect(() => {
@@ -227,7 +266,7 @@ export default function App() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ height: '100vh', maxHeight: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* Top Navbar */}
       <Navbar
         activeTab={activeTab}
@@ -235,18 +274,24 @@ export default function App() {
         user={user}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenAuth={() => setIsAuthOpen(true)}
-        onOpenAbout={() => setIsAboutOpen(true)}
         onLogout={handleLogout}
       />
 
       {/* Main Pages */}
-      <div style={{ flex: 1 }}>
+      <div style={{
+        flex: 1,
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: activeTab === 'chat' ? 'hidden' : 'auto'
+      }}>
         {activeTab === 'home' && (
           <Home
             onStartChatWithPrompt={handleStartChatWithPrompt}
             onOpenCamera={() => setIsCameraOpen(true)}
             onOpenVoice={() => setIsVoiceOpen(true)}
             onOpenUpload={(type) => setUploadModal({ isOpen: true, type })}
+            onOpenGenerate={(mode) => setGenerateModal({ isOpen: true, mode })}
             onOpenAuth={() => setIsAuthOpen(true)}
             user={user}
           />
@@ -272,7 +317,7 @@ export default function App() {
         )}
 
         {activeTab === 'admin' && (
-          <AdminDashboard />
+          <AdminDashboard onExit={handleExitAdmin} />
         )}
       </div>
 
@@ -306,13 +351,12 @@ export default function App() {
       <AuthModal
         isOpen={isAuthOpen}
         onClose={() => setIsAuthOpen(false)}
-        onAuthSuccess={(userData) => setUser(userData)}
-      />
-
-      <DeveloperModal
-        isOpen={isAboutOpen}
-        onClose={() => setIsAboutOpen(false)}
-        onAskQuestion={(q) => handleStartChatWithPrompt(q)}
+        onAuthSuccess={(userData) => {
+          setUser(userData);
+          if (userData?.settings) {
+            setUserSettings(prev => ({ ...prev, ...userData.settings }));
+          }
+        }}
       />
     </div>
   );

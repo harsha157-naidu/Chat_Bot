@@ -1,14 +1,14 @@
 import React from 'react';
 import { Sparkles, Camera, Mic, ShieldCheck, User, Settings, LayoutDashboard, Info, LogOut } from 'lucide-react';
 
-export default function Navbar({ 
-  activeTab, 
-  setActiveTab, 
-  user, 
-  onOpenSettings, 
-  onOpenAuth, 
+export default function Navbar({
+  activeTab,
+  setActiveTab,
+  user,
+  onOpenSettings,
+  onOpenAuth,
   onOpenAbout,
-  onLogout 
+  onLogout
 }) {
   return (
     <header style={{
@@ -24,7 +24,7 @@ export default function Navbar({
       zIndex: 40
     }}>
       {/* Brand */}
-      <div 
+      <div
         onClick={() => setActiveTab('home')}
         style={{
           display: 'flex',
@@ -97,45 +97,14 @@ export default function Navbar({
           AI Chat
         </button>
 
-        <button
-          onClick={() => setActiveTab('admin')}
-          className={`btn-secondary ${activeTab === 'admin' ? 'active-nav' : ''}`}
-          style={{
-            background: activeTab === 'admin' ? 'rgba(56, 189, 248, 0.15)' : 'transparent',
-            borderColor: activeTab === 'admin' ? '#38bdf8' : 'transparent',
-            color: activeTab === 'admin' ? '#38bdf8' : 'var(--text-secondary)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px'
-          }}
-        >
-          <LayoutDashboard size={15} />
-          Admin
-        </button>
 
-        <button
-          onClick={onOpenAbout}
-          className="btn-secondary"
-          style={{
-            background: 'transparent',
-            borderColor: 'transparent',
-            color: 'var(--text-secondary)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px'
-          }}
-          title="About SenseSphere AI & Developer Arigala Sai Harshavardhan"
-        >
-          <Info size={15} />
-          About Developer
-        </button>
       </nav>
 
       {/* User Actions */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-        <button 
+        <button
           onClick={onOpenSettings}
-          className="btn-icon" 
+          className="btn-icon"
           title="Settings & Audio preferences"
           style={{ borderRadius: '50%' }}
         >
@@ -169,9 +138,9 @@ export default function Navbar({
               </div>
               <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{user.name}</span>
             </div>
-            <button 
-              onClick={onLogout} 
-              className="btn-icon" 
+            <button
+              onClick={onLogout}
+              className="btn-icon"
               title="Sign Out"
               style={{ borderRadius: '50%' }}
             >
@@ -179,7 +148,7 @@ export default function Navbar({
             </button>
           </div>
         ) : (
-          <button 
+          <button
             onClick={onOpenAuth}
             className="btn-primary"
             style={{ fontSize: '0.85rem', padding: '8px 18px' }}

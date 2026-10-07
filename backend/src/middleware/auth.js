@@ -32,8 +32,28 @@ const optionalAuth = (req, res, next) => {
   next();
 };
 
+const requireAdmin = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(403).json({ error: 'Access denied. Administrative authentication required.' });
+  }
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    if (decoded.role !== 'admin' || decoded.email !== 'naiduharsha2006@gmail.com') {
+      return res.status(403).json({ error: 'Forbidden: Restricted to Administrator Harsha Naidu.' });
+    }
+    req.admin = decoded;
+    next();
+  } catch (err) {
+    return res.status(403).json({ error: 'Access denied: Invalid or expired admin session token.' });
+  }
+};
+
 module.exports = {
   requireAuth,
   optionalAuth,
+  requireAdmin,
   JWT_SECRET
 };
